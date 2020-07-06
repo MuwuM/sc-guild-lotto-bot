@@ -14,7 +14,8 @@ const {
   discordToken,
   techAdminId,
   guildAdminId,
-  skippedUser
+  skippedUser,
+  channelName
 } = require("./config");
 
 
@@ -40,6 +41,7 @@ function shuffle(array) {
 
   let lottoLines;
   let lottoInterval;
+  let messageID;
 
   try {
     lottoLines = await fs.readJSON("./lotto-lines.json");
@@ -53,6 +55,13 @@ function shuffle(array) {
     lottoInterval = DateTime.local().toFormat("y-MM");
     await fs.outputJSON("./lotto-interval.json", {interval: lottoInterval});
   }
+  try {
+    messageID = (await fs.readJSON("./lotto-message-id.json")).id;
+  } catch (error) {
+    messageID = null;
+    await fs.outputJSON("./lotto-message-id.json", {id: messageID});
+  }
+
 
   function hashLog(file) {
     const hash = crypto.createHash("md5");
@@ -272,9 +281,14 @@ function shuffle(array) {
   }
 
 
-  client.on("ready", () => {
+  client.on("ready", async() => {
     botID = client.user.id;
-    console.log(`Logged in as ${client.user.tag}!`);
+    console.info(`Logged in as ${client.user.tag}!`);
+    const channel = client.channels.cache.find((c) => c.name === channelName);
+    if (channel && messageID) {
+      displayMsg = await channel.messages.fetch(messageID);
+    }
+    console.info(`displayMsg: ${!!displayMsg}`);
   });
 
   client.on("messageReactionAdd", async(reaction, user) => {
@@ -285,7 +299,7 @@ function shuffle(array) {
       try {
         await reaction.fetch();
       } catch (error) {
-        console.log("Something went wrong when fetching the message: ", error);
+        console.error("Something went wrong when fetching the message: ", error);
         return;
       }
     }
@@ -298,15 +312,19 @@ function shuffle(array) {
     }
     if (user.id !== botID) {
       await reaction.users.remove(user.id);
-      console.log(user);
+      //console.log(user);
     }
 
     if (user.id === guildAdminId || user.id === techAdminId) {
       displayMsgOld = displayMsg;
       const now = DateTime.fromFormat(lottoInterval, "y-MM");
 
+
       const nextDraw = cashoutDate(now);
       const lastDraw = cashoutDate(nextDraw.minus({months: 1}));
+      if (nextDraw >= DateTime.local()) {
+        return;
+      }
 
       const {tokens} = getUserTokens(lastDraw, nextDraw);
       const tickets = [];
@@ -335,9 +353,14 @@ function shuffle(array) {
       await fs.outputJSON("./lotto-interval.json", {interval: lottoInterval});
 
       const newMsg = await displayMsgOld.channel.send(getDisplay());
-      await newMsg.react("⏳");
+      if (cashoutDate(DateTime.fromFormat(lottoInterval, "y-MM")) < DateTime.local()) {
+        await newMsg.react("✅");
+      } else {
+        await newMsg.react("⏳");
+      }
 
       displayMsg = newMsg;
+      await fs.outputJSON("./lotto-message-id.json", {id: displayMsg.id});
 
     }
     /*console.log({
@@ -348,16 +371,21 @@ function shuffle(array) {
   });
 
   client.on("message", async(msg) => {
-    if (msg.content === "init" && msg.author.id === techAdminId) {
+    if (msg.content === "init" && msg.channel.name === channelName && msg.author.id === techAdminId) {
       const exampleEmbed = getDisplay();
       for (const oldMsg of await msg.channel.messages.fetch()) {
         await oldMsg[1].delete();
       }
 
       const newMsg = await msg.channel.send(exampleEmbed);
-      await newMsg.react("⏳");
+      if (cashoutDate(DateTime.fromFormat(lottoInterval, "y-MM")) < DateTime.local()) {
+        await newMsg.react("✅");
+      } else {
+        await newMsg.react("⏳");
+      }
 
       displayMsg = newMsg;
+      await fs.outputJSON("./lotto-message-id.json", {id: displayMsg.id});
 
     }
   });
