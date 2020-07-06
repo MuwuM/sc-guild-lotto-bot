@@ -339,6 +339,8 @@ function shuffle(array) {
 
       shuffle(tickets);
 
+      await fs.outputJSON(`./logs/${lottoInterval}.json`, tickets, {spaces: 2});
+
       const winner = [];
 
       winner[0] = tickets[0] || "/";
