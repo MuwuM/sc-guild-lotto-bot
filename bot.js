@@ -355,7 +355,7 @@ function shuffle(array) {
       await fs.outputJSON("./lotto-interval.json", {interval: lottoInterval});
 
       const newMsg = await displayMsgOld.channel.send(getDisplay());
-      if (cashoutDate(DateTime.fromFormat(lottoInterval, "y-MM")) < DateTime.local()) {
+      if (cashoutDate(DateTime.fromFormat(lottoInterval, "y-MM")) < DateTime.utc().plus({hours:2})) {
         await newMsg.react("✅");
       } else {
         await newMsg.react("⏳");
@@ -380,7 +380,7 @@ function shuffle(array) {
       }
 
       const newMsg = await msg.channel.send(exampleEmbed);
-      if (cashoutDate(DateTime.fromFormat(lottoInterval, "y-MM")) < DateTime.local()) {
+      if (cashoutDate(DateTime.fromFormat(lottoInterval, "y-MM")) < DateTime.local().plus({hours:2})) {
         await newMsg.react("✅");
       } else {
         await newMsg.react("⏳");
@@ -402,7 +402,7 @@ function shuffle(array) {
       await displayMsg.edit(updateMsg);
     }
     const reactions = await displayMsg.reactions.resolve("⏳");
-    if (reactions && reactions.count > 0 && cashoutDate(DateTime.fromFormat(lottoInterval, "y-MM")) < DateTime.local()) {
+    if (reactions && reactions.count > 0 && cashoutDate(DateTime.fromFormat(lottoInterval, "y-MM")) < DateTime.local().plus({hours:2})) {
       await reactions.remove();
       await displayMsg.react("✅");
     }
