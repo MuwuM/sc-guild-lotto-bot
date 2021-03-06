@@ -2,7 +2,7 @@ const {
   Client, MessageEmbed
 } = require("discord.js");
 const { DateTime } = require("luxon");
-const client = new Client();
+const client = new Client({ partials: ['MESSAGE', 'CHANNEL', 'REACTION'] });
 const crypto = require("crypto");
 const gw2 = require("gw2");
 const fs = require("fs-extra");
@@ -488,12 +488,14 @@ function shuffle(array) {
       await fs.outputJSON("./lotto-lines.json", lottoLines, { spaces: 2 });
       await updateDisplay();
     } catch (error) {
+      await fs.outputFile("./errors.log",error.stack+"\n",{flag:"a"});
       console.error(error);
     }
     setTimeout(refresh, 30000);
   }
   setTimeout(refresh, 10000);
   client.login(discordToken);
-})().catch((err) => {
+})().catch(async(err) => {
   console.error(err);
+  await fs.outputFile("./errors.log",error.stack+"\n",{flag:"a"});
 });
