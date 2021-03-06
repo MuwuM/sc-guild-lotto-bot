@@ -3,5 +3,5 @@ config.js
 lotto-*.json
 *.txt
 logs/**/*
-errors.log
+./errors.log
 
