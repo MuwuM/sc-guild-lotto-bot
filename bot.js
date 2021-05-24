@@ -1,8 +1,8 @@
 const {
   Client, MessageEmbed
 } = require("discord.js");
-const {DateTime} = require("luxon");
-const client = new Client();
+const { DateTime } = require("luxon");
+const client = new Client({ partials: ['MESSAGE', 'CHANNEL', 'REACTION'] });
 const crypto = require("crypto");
 const gw2 = require("gw2");
 const fs = require("fs-extra");
@@ -35,7 +35,7 @@ function shuffle(array) {
   return array;
 }
 
-(async() => {
+(async () => {
 
   const gw2client = new gw2.Client();
 
@@ -53,13 +53,13 @@ function shuffle(array) {
     lottoInterval = (await fs.readJSON("./lotto-interval.json")).interval;
   } catch (error) {
     lottoInterval = DateTime.local().toFormat("y-MM");
-    await fs.outputJSON("./lotto-interval.json", {interval: lottoInterval});
+    await fs.outputJSON("./lotto-interval.json", { interval: lottoInterval });
   }
   try {
     messageID = (await fs.readJSON("./lotto-message-id.json")).id;
   } catch (error) {
     messageID = null;
-    await fs.outputJSON("./lotto-message-id.json", {id: messageID});
+    await fs.outputJSON("./lotto-message-id.json", { id: messageID });
   }
 
 
@@ -111,7 +111,7 @@ function shuffle(array) {
   function getDisplay() {
     const now = DateTime.fromFormat(lottoInterval, "y-MM");
     const nextDraw = cashoutDate(now);
-    const lastDraw = cashoutDate(nextDraw.minus({months: 1}));
+    const lastDraw = cashoutDate(nextDraw.minus({ months: 1 }));
 
     const {
       tokens, pot
@@ -199,7 +199,7 @@ function shuffle(array) {
   function getDisplayResults(month, winner) {
     const now = DateTime.fromFormat(month, "y-MM");
     const nextDraw = cashoutDate(now);
-    const lastDraw = cashoutDate(nextDraw.minus({months: 1}));
+    const lastDraw = cashoutDate(nextDraw.minus({ months: 1 }));
 
     const {
       tokens, pot
@@ -281,17 +281,50 @@ function shuffle(array) {
   }
 
 
-  client.on("ready", async() => {
+  client.on("ready", async () => {
     botID = client.user.id;
     console.info(`Logged in as ${client.user.tag}!`);
     const channel = client.channels.cache.find((c) => c.name === channelName);
     if (channel && messageID) {
       displayMsg = await channel.messages.fetch(messageID);
     }
-    console.info(`displayMsg: ${!!displayMsg}`);
+    if (channel) {
+      const oldMsgs = await channel.messages.fetch();
+      for (const [msgId, message] of oldMsgs) {
+        if (!message || !message.embeds || message.embeds.length !== 1) {
+          continue;
+        }
+        const embed = message.embeds[0];
+        if (embed.title !== 'Gildenlotterie') {
+          continue;
+        }
+        if (embed.description === 'Ergebnisse') {
+          continue;
+        }
+        if (msgId === messageID) {
+          continue;
+        }
+        const dateStr = embed.fields.find(f => f.name === 'Nächste Ziehung');
+        if (dateStr) {
+          const month = DateTime.fromFormat(dateStr.value, "dd.MM.y HH:mm").toFormat("y-MM");
+          if (await fs.exists(`./logs/${month}.json`)) {
+            tickets = await fs.readJSON(`./logs/${month}.json`);
+            const winner = [];
+            winner[0] = tickets[0] || "/";
+            winner[1] = tickets.find((t) => !winner.includes(t)) || "/";
+            winner[2] = tickets.find((t) => !winner.includes(t)) || "/";
+            winner[3] = "Gildenbank";
+
+            await message.edit(getDisplayResults(month, winner));
+            await message.reactions.removeAll();
+          }
+        }
+      }
+    }
+    console.info(`displayMsg: ${!!displayMsg} -> '${displayMsg.id}'`);
   });
 
-  client.on("messageReactionAdd", async(reaction, user) => {
+  client.on("messageReactionAdd", async (reaction, user) => {
     if (!botID) {
       return;
     }
@@ -303,6 +336,7 @@ function shuffle(array) {
         return;
       }
     }
+    console.log({ _emoji: reaction._emoji });
     if (!reaction.message || !reaction.message.embeds || reaction.message.embeds.length !== 1) {
       return;
     }
@@ -310,9 +344,22 @@ function shuffle(array) {
     if (embed.type !== "rich" || embed.title !== "Gildenlotterie") {
       return;
     }
-    if (user.id !== botID) {
-      await reaction.users.remove(user.id);
-      //console.log(user);
+    let hasBot = false;
+    for (const [userID, userInList] of await reaction.users.fetch()) {
+      console.log(userInList);
+      if (userInList.id !== botID) {
+        await reaction.users.remove(userInList.id);
+      } else {
+        hasBot = true;
+      }
+    }
+
+    if (!hasBot && reaction.message.id === displayMsg.id) {
+      if (cashoutDate(DateTime.fromFormat(lottoInterval, "y-MM")) < DateTime.utc().plus({ hours: 2 })) {
+        await reaction.message.react("✅");
+      } else {
+        await reaction.message.react("⏳");
+      }
     }
 
     if (user.id === guildAdminId || user.id === techAdminId) {
@@ -321,26 +368,29 @@ function shuffle(array) {
 
 
       const nextDraw = cashoutDate(now);
-      const lastDraw = cashoutDate(nextDraw.minus({months: 1}));
+      const lastDraw = cashoutDate(nextDraw.minus({ months: 1 }));
       if (nextDraw >= DateTime.local()) {
         return;
       }
 
-      const {tokens} = getUserTokens(lastDraw, nextDraw);
-      const tickets = [];
-      for (const [
-        user,
-        ticketCount
-      ] of Object.entries(tokens)) {
-        for (let index = 0; index < ticketCount; index++) {
-          tickets.push(user);
+      const { tokens } = getUserTokens(lastDraw, nextDraw);
+      let tickets = [];
+      if (await fs.exists(`./logs/${lottoInterval}.json`)) {
+        tickets = await fs.readJSON(`./logs/${lottoInterval}.json`)
+      } else {
+        for (const [
+          user,
+          ticketCount
+        ] of Object.entries(tokens)) {
+          for (let index = 0; index < ticketCount; index++) {
+            tickets.push(user);
+          }
         }
+
+        shuffle(tickets);
+
+        await fs.outputJSON(`./logs/${lottoInterval}.json`, tickets, { spaces: 2 });
       }
-
-      shuffle(tickets);
-
-      await fs.outputJSON(`./logs/${lottoInterval}.json`, tickets, {spaces: 2});
-
       const winner = [];
 
       winner[0] = tickets[0] || "/";
@@ -351,18 +401,18 @@ function shuffle(array) {
 
       await displayMsgOld.edit(getDisplayResults(lottoInterval, winner));
       await displayMsgOld.reactions.removeAll();
-      lottoInterval = now.plus({months: 1}).toFormat("y-MM");
-      await fs.outputJSON("./lotto-interval.json", {interval: lottoInterval});
+      lottoInterval = now.plus({ months: 1 }).toFormat("y-MM");
+      await fs.outputJSON("./lotto-interval.json", { interval: lottoInterval });
 
       const newMsg = await displayMsgOld.channel.send(getDisplay());
-      if (cashoutDate(DateTime.fromFormat(lottoInterval, "y-MM")) < DateTime.local().plus({hours: 2})) {
+      if (cashoutDate(DateTime.fromFormat(lottoInterval, "y-MM")) < DateTime.utc().plus({ hours: 2 })) {
         await newMsg.react("✅");
       } else {
         await newMsg.react("⏳");
       }
 
       displayMsg = newMsg;
-      await fs.outputJSON("./lotto-message-id.json", {id: displayMsg.id});
+      await fs.outputJSON("./lotto-message-id.json", { id: displayMsg.id });
 
     }
     /*console.log({
@@ -372,7 +422,7 @@ function shuffle(array) {
     });*/
   });
 
-  client.on("message", async(msg) => {
+  client.on("message", async (msg) => {
     if (msg.content === "init" && msg.channel.name === channelName && msg.author.id === techAdminId) {
       const exampleEmbed = getDisplay();
       for (const oldMsg of await msg.channel.messages.fetch()) {
@@ -380,14 +430,14 @@ function shuffle(array) {
       }
 
       const newMsg = await msg.channel.send(exampleEmbed);
-      if (cashoutDate(DateTime.fromFormat(lottoInterval, "y-MM")) < DateTime.local()) {
+      if (cashoutDate(DateTime.fromFormat(lottoInterval, "y-MM")) < DateTime.local().plus({ hours: 2 })) {
         await newMsg.react("✅");
       } else {
         await newMsg.react("⏳");
       }
 
       displayMsg = newMsg;
-      await fs.outputJSON("./lotto-message-id.json", {id: displayMsg.id});
+      await fs.outputJSON("./lotto-message-id.json", { id: displayMsg.id });
 
     }
   });
@@ -402,7 +452,7 @@ function shuffle(array) {
       await displayMsg.edit(updateMsg);
     }
     const reactions = await displayMsg.reactions.resolve("⏳");
-    if (reactions && reactions.count > 0 && cashoutDate(DateTime.fromFormat(lottoInterval, "y-MM")) < DateTime.local()) {
+    if (reactions && reactions.count > 0 && cashoutDate(DateTime.fromFormat(lottoInterval, "y-MM")) < DateTime.local().plus({ hours: 2 })) {
       await reactions.remove();
       await displayMsg.react("✅");
     }
@@ -412,7 +462,7 @@ function shuffle(array) {
   async function refresh() {
     try {
 
-      const lines = await gw2client.get(`guild/${guild}/log`, {token});
+      const lines = await gw2client.get(`guild/${guild}/log`, { token });
 
       for (const line of lines) {
         if (line.type !== "stash") {
@@ -435,15 +485,17 @@ function shuffle(array) {
 
       lottoLines.sort((a, b) => a.id - b.id);
 
-      await fs.outputJSON("./lotto-lines.json", lottoLines, {spaces: 2});
+      await fs.outputJSON("./lotto-lines.json", lottoLines, { spaces: 2 });
       await updateDisplay();
     } catch (error) {
+      await fs.outputFile("./errors.log",error.stack+"\n",{flag:"a"});
       console.error(error);
     }
     setTimeout(refresh, 30000);
   }
   setTimeout(refresh, 10000);
   client.login(discordToken);
-})().catch((err) => {
+})().catch(async(err) => {
   console.error(err);
+  await fs.outputFile("./errors.log",error.stack+"\n",{flag:"a"});
 });
