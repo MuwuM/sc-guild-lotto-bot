@@ -355,7 +355,7 @@ function shuffle(array) {
       await fs.outputJSON("./lotto-interval.json", {interval: lottoInterval});
 
       const newMsg = await displayMsgOld.channel.send(getDisplay());
-      if (cashoutDate(DateTime.fromFormat(lottoInterval, "y-MM")) < DateTime.local()) {
+      if (cashoutDate(DateTime.fromFormat(lottoInterval, "y-MM")) < DateTime.local().plus({hours: 2})) {
         await newMsg.react("✅");
       } else {
         await newMsg.react("⏳");
