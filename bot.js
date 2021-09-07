@@ -307,8 +307,8 @@ function shuffle(array) {
         const dateStr = embed.fields.find(f => f.name === 'Nächste Ziehung');
         if (dateStr) {
           const month = DateTime.fromFormat(dateStr.value, "dd.MM.y HH:mm").toFormat("y-MM");
-          if (await fs.exists(`./logs/${month}.json`)) {
-            tickets = await fs.readJSON(`./logs/${month}.json`);
+          if (await fs.pathExists(path.join(__dirname,`logs/${month}.json`))) {
+            tickets = await fs.readJSON(path.join(__dirname,`logs/${month}.json`));
             const winner = [];
             winner[0] = tickets[0] || "/";
             winner[1] = tickets.find((t) => !winner.includes(t)) || "/";
@@ -375,8 +375,8 @@ function shuffle(array) {
 
       const { tokens } = getUserTokens(lastDraw, nextDraw);
       let tickets = [];
-      if (await fs.exists(`./logs/${lottoInterval}.json`)) {
-        tickets = await fs.readJSON(`./logs/${lottoInterval}.json`)
+      if (await fs.pathExists(path.join(__dirname,`logs/${lottoInterval}.json`))) {
+        tickets = await fs.readJSON(path.join(__dirname,`logs/${lottoInterval}.json`))
       } else {
         for (const [
           user,
@@ -389,7 +389,7 @@ function shuffle(array) {
 
         shuffle(tickets);
 
-        await fs.outputJSON(`./logs/${lottoInterval}.json`, tickets, { spaces: 2 });
+        await fs.outputJSON(path.join(__dirname,`logs/${lottoInterval}.json`), tickets, { spaces: 2 });
       }
       const winner = [];
 
